@@ -9,6 +9,9 @@ from datetime import datetime
 from pathlib import Path
 # `requests` lets Python send HTTP requests to the Groq API over the internet.
 import requests
+# This block checks if the database file "yani.db" exists in the current folder.
+if not os.path.exists("yani.db"):
+    import init_db
 
 # Create the Flask app object.
 # `__name__` tells Flask where this file lives so it can find templates and static files correctly.
@@ -620,7 +623,6 @@ def edit_conversation(conversation_id):
 # This special Python check only runs when this file is started directly,
 # for example with `python app.py`.
 # It does not run when the file is imported from somewhere else.
-if __name__ == '__main__':
-    # `debug=True` turns on Flask debug mode.
-    # That gives easier error messages and auto-reloads the server when the file changes.
-    app.run(debug=True)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000)) #sets the port to the value of the PORT environment variable, or 5000 if PORT is not set
+    app.run(host="0.0.0.0", port=port) #starts the Flask development server, listening on all network interfaces 
