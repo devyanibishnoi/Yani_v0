@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<!-- Tells the browser this is an HTML5 document. -->
+<html>
+<head>
+    <!-- Text shown in the browser tab. -->
+    <title>Yani</title>
+</head>
+<body>
+    <!-- Main page heading. -->
+    <h1>Yani</h1>
+
+    <!-- This form creates a brand new journal entry.
+         `method="POST"` means the browser will send the form data in the request body. -->
+    <form method="POST" onsubmit="saveScrollPosition()">
+        <!-- `name="raw_text"` is important because Flask reads this exact field name in `request.form["raw_text"]`. -->
+        <textarea name="raw_text" rows="5" cols="40" placeholder="Pour your thoughts out..."></textarea>
+        <br><br>
+        <button type="submit">Save</button>
+    </form>
+
+    <h2>Your Timeline</h2>
+
+    <!-- Search form.
+         `method="GET"` puts the search text into the page URL like `/?q=something`.
+         `action="/"` means submit the form back to the home page route. -->
+    <form method="GET" action="/" style="margin-bottom: 20px;">
+        <input
+            type="text"
+            name="q"
+            value="{{ search_query }}"
+            placeholder="Search words or feelings..."
+        >
+        <button type="submit">Search</button>
+
+        <!-- Jinja syntax uses percent-based template tags for logic.
+             This block only shows "Clear" when a search query exists. -->
+        {% if search_query %}
+            <a href="/">Clear</a>
+        {% endif %}
+    </form>
+
+    <!-- Jinja can also print variable values directly into the page. -->
+    {% if search_query %}
+        <p>Showing results for: <strong>{{ search_query }}</strong></p>
+    {% endif %}
+
+    <!-- Only show the "no results" message when the user searched for something
+         and that search returned no matching conversations. -->
+    {% if search_query and not conversations %}
+        <p>No matching conversations found.</p>
+    {% endif %}
+
+    <div>
+        <!-- Loop through every conversation that Flask passed into the template.
+             Each `conversation` value is a tuple:
+             conversation[0] = id
+             conversation[1] = date
+             conversation[2] = messages
+             conversation[3] = saved flag -->
+        {% for conversation in conversations %}
+            <div style="border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
+                <!-- Show the conversation date label. -->
+                <small>{{ conversation[1] }}</small><br><br>
+
+                <!-- Loop through every message inside this conversation. -->
+                {% for sender, message in conversation[2] %}
+                    <!-- If the sender is the user, show the gray user style. -->
+                    {% if sender == 'user' %}
+                        <div style="margin-bottom: 10px; padding: 8px; background-color: #f0f0f0; border-radius: 5px;">
+                            <strong>You:</strong> {{ message }}
+                        </div>
+                    {% else %}
+                        <!-- Otherwise show the blue Yani style. -->
+                        <div style="margin-bottom: 10px; padding: 8px; background-color: #e8f4fd; border-radius: 5px;">
+                            <strong>Yani:</strong> {{ message }}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+
+                <br>
+
+                <!-- Only show Reflect and Reply if the conversation is not marked as saved.
+                     `not conversation[3]` means the saved flag is false/0. -->
+                {% if not conversation[3] %}
+                    <!-- Reflect form.
+                         `onsubmit` runs JavaScript right before the form is sent.
+                         We save the scroll position so the page can return to the same area after reload.
+                         `this.querySelector('button')` means:
+                         "inside this form, find the first button element." -->
+                    <form action="/reflect/{{ conversation[0] }}" method="POST" style="display:inline; margin-right: 10px;"
+                    onsubmit="saveScrollPosition(); showLoading(this.querySelector('button'));">
+                        <button type="submit">Reflect</button>
+                    </form>
+
+                    <!-- Reply form for adding another user message to the same conversation. -->
+                    <form action="/reply/{{ conversation[0] }}" method="POST" style="display:inline; margin-right: 10px;" onsubmit="saveScrollPosition()">
+                        <input type="text" name="user_reply" placeholder="Reply to Yani..." style="width: 200px;" required>
+                        <button type="submit">Reply</button>
+                    </form>
+                {% endif %}
+
+                <!-- Container for the three-dots menu.
+                     `position: relative` helps position things around this area. -->
+                <div class="menu-container" style="position: relative; display: inline-block;">
+                    <!-- This button does not submit a form.
+                         It only opens the menu using JavaScript.
+                         `data-conversation-id` stores the conversation id directly on the HTML element.
+                         `&#8230;` is the HTML entity for a horizontal three-dots symbol. -->
+                    <button class="menu-button" data-conversation-id="{{ conversation[0] }}" style="background: none; border: none; cursor: pointer; font-size: 18px; padding: 5px; line-height: 1;">&#8230;</button>
+
+                    <!-- Hidden dropdown menu.
+                         `display: none` means hidden at first.
+                         JavaScript changes it to `block` when needed. -->
+                    <div id="menu-{{ conversation[0] }}" class="menu-dropdown" style="display: none; position: fixed; background: white; border: 1px solid #ccc; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 1000; min-width: 120px;">
+                        <!-- If the conversation is saved, show Edit.
+                             Otherwise show Save. -->
+                        {% if conversation[3] %}
+                            <div class="menu-item edit-item" data-conversation-id="{{ conversation[0] }}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='white'">Edit</div>
+                        {% else %}
+                            <div class="menu-item save-item" data-conversation-id="{{ conversation[0] }}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='white'">Save</div>
+                        {% endif %}
+
+                        <!-- Delete is always available. -->
+                        <div class="menu-item delete-item" data-conversation-id="{{ conversation[0] }}" style="padding: 8px 12px; cursor: pointer; color: #d9534f; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='white'">Delete</div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+</body>
+
+<!-- Modal window for confirming deletion.
+     The large semi-transparent background covers the whole screen. -->
+<div id="deleteModal" class="modal" style="display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+    <!-- The white box in the middle of the modal. -->
+    <div class="modal-content" style="background-color: white; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 400px; border-radius: 8px; text-align: center;">
+        <h3 style="margin-top: 0; color: #d9534f;">Delete Conversation</h3>
+        <p>Are you sure you want to delete this entire conversation? This action cannot be undone.</p>
+        <div style="margin-top: 20px;">
+            <!-- `onclick` runs JavaScript when the button is clicked. -->
+            <button onclick="closeModal()" style="background: #6c757d; color: white; border: none; padding: 8px 16px; margin-right: 10px; border-radius: 4px; cursor: pointer;">Cancel</button>
+            <button id="confirmDeleteBtn" onclick="executeDelete()" style="background: #d9534f; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Delete</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Change the Reflect button text while the request is in progress.
+// This gives the user feedback that something is happening.
+function showLoading(button) {
+    button.innerText = "Yani is reflecting...";
+    button.disabled = true;
+}
+
+// Save the current vertical scroll position in sessionStorage.
+// `sessionStorage` is browser storage that lasts until the tab is closed.
+function saveScrollPosition() {
+    sessionStorage.setItem('yaniScrollPosition', String(window.scrollY));
+}
+
+// Read the saved scroll position and move the page back to that location.
+function restoreScrollPosition() {
+    const savedPosition = sessionStorage.getItem('yaniScrollPosition');
+
+    // `!== null` checks whether a saved value actually exists.
+    if (savedPosition !== null) {
+        // `parseInt(..., 10)` converts the stored text back into a base-10 number.
+        window.scrollTo(0, parseInt(savedPosition, 10));
+
+        // Remove it after using it so it does not affect future page loads.
+        sessionStorage.removeItem('yaniScrollPosition');
+    }
+}
+
+// Listen for clicks anywhere on the page.
+// Event delegation lets one listener handle many menu buttons.
+document.addEventListener('click', function(event) {
+    // `closest('.menu-button')` walks up from the clicked element
+    // and finds the nearest ancestor with class `menu-button`.
+    const menuButton = event.target.closest('.menu-button');
+
+    if (menuButton) {
+        const conversationId = menuButton.getAttribute('data-conversation-id');
+        toggleMenu(conversationId, menuButton);
+    }
+});
+
+// When the window changes size or the page scrolls, close open menus
+// so they do not end up floating in the wrong place.
+window.addEventListener('resize', closeAllMenus);
+window.addEventListener('scroll', closeAllMenus);
+
+// After the page finishes loading, try to restore the old scroll position.
+window.addEventListener('load', restoreScrollPosition);
+
+// Show or hide one dropdown menu.
+function toggleMenu(conversationId, menuButton) {
+    // Build the menu id dynamically using a template literal.
+    // Backticks allow `${...}` insertion inside the string.
+    const menu = document.getElementById(`menu-${conversationId}`);
+
+    // Close every other open menu first so only one can stay open.
+    document.querySelectorAll('.menu-dropdown').forEach(m => {
+        if (m.id !== `menu-${conversationId}`) {
+            m.style.display = 'none';
+        }
+    });
+
+    // Check whether the selected menu is currently hidden.
+    const isClosed = menu.style.display === 'none';
+
+    // Ternary operator:
+    // condition ? value_if_true : value_if_false
+    menu.style.display = isClosed ? 'block' : 'none';
+
+    // Only calculate menu position when opening it.
+    if (isClosed) {
+        positionMenu(menu, menuButton);
+    }
+}
+
+// Place the dropdown menu near the three-dots button while keeping it on screen.
+function positionMenu(menu, menuButton) {
+    const spacing = 8;
+
+    // `getBoundingClientRect()` returns the element's position and size on the screen.
+    const buttonRect = menuButton.getBoundingClientRect();
+
+    menu.style.top = `${buttonRect.bottom + 6}px`;
+    menu.style.left = `${buttonRect.right}px`;
+    menu.style.right = 'auto';
+    menu.style.bottom = 'auto';
+    menu.style.transform = 'translateX(-100%)';
+
+    // Measure the menu after placing it.
+    let rect = menu.getBoundingClientRect();
+
+    // If the menu would go below the screen, move it above the button instead.
+    if (rect.bottom > window.innerHeight - spacing) {
+        menu.style.top = `${Math.max(spacing, buttonRect.top - rect.height - 6)}px`;
+        rect = menu.getBoundingClientRect();
+    }
+
+    // If the menu would go off the right side, shift it left.
+    if (rect.right > window.innerWidth - spacing) {
+        menu.style.left = `${window.innerWidth - rect.width - spacing}px`;
+        menu.style.transform = 'none';
+        rect = menu.getBoundingClientRect();
+    }
+
+    // If the menu would go off the left side, pin it to the left edge with some spacing.
+    if (rect.left < spacing) {
+        menu.style.left = `${spacing}px`;
+        menu.style.transform = 'none';
+    }
+}
+
+// Hide every dropdown menu.
+function closeAllMenus() {
+    document.querySelectorAll('.menu-dropdown').forEach(menu => {
+        menu.style.display = 'none';
+    });
+}
+
+// Another delegated click listener for edit/save/delete menu items.
+document.addEventListener('click', function(event) {
+    const editItem = event.target.closest('.edit-item');
+    if (editItem) {
+        const conversationId = editItem.getAttribute('data-conversation-id');
+        editConversation(conversationId);
+        return;
+    }
+
+    const saveItem = event.target.closest('.save-item');
+    if (saveItem) {
+        const conversationId = saveItem.getAttribute('data-conversation-id');
+        saveConversation(conversationId);
+        return;
+    }
+
+    const deleteItem = event.target.closest('.delete-item');
+    if (deleteItem) {
+        const conversationId = deleteItem.getAttribute('data-conversation-id');
+        confirmDelete(conversationId);
+        return;
+    }
+
+    // If the user clicked anywhere outside a menu container, close all menus.
+    if (!event.target.closest('.menu-container')) {
+        closeAllMenus();
+    }
+});
+
+// Global variable.
+// "Global" means code in different functions can read and change it.
+// We use it to remember which conversation the user is about to delete.
+let conversationToDelete = null;
+
+// Open the delete modal and remember the chosen conversation id.
+function confirmDelete(conversationId) {
+    conversationToDelete = conversationId;
+    document.getElementById('deleteModal').style.display = 'block';
+    document.getElementById(`menu-${conversationId}`).style.display = 'none';
+}
+
+// Close the modal and clear the pending delete target.
+function closeModal() {
+    document.getElementById('deleteModal').style.display = 'none';
+    conversationToDelete = null;
+}
+
+// If the user confirms deletion, create a form in JavaScript and submit it.
+function executeDelete() {
+    if (conversationToDelete) {
+        saveScrollPosition();
+
+        // Create a form element in memory.
+        const form = document.createElement('form');
+
+        // Set the form to POST so Flask uses the delete route correctly.
+        form.method = 'POST';
+        form.action = `/delete/${conversationToDelete}`;
+
+        // Add the form to the page, then submit it.
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Mark a conversation as editable again.
+function editConversation(conversationId) {
+    saveScrollPosition();
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/edit/${conversationId}`;
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// Mark a conversation as saved.
+function saveConversation(conversationId) {
+    saveScrollPosition();
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/save/${conversationId}`;
+    document.body.appendChild(form);
+    form.submit();
+}
+</script>
+</html>
